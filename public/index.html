@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plancha - Códigos QR</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-8 font-sans">
+    <div class="max-w-6xl mx-auto">
+        <div class="flex justify-between items-center mb-8">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-800">Panel de QRs Dinámicos</h1>
+                <p class="text-gray-600">Administra tus enlaces en tiempo real</p>
+            </div>
+            <div class="space-x-2">
+                <button onclick="crearNuevoQR()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-indigo-700 transition">+ Nuevo QR</button>
+                <span class="bg-emerald-500 text-white px-4 py-2 rounded-lg font-medium inline-block">Sistema Activo</span>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-md overflow-hidden">
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="bg-slate-800 text-white">
+                        <th class="p-4">Código QR</th>
+                        <th class="p-4">Nombre del Cliente</th>
+                        <th class="p-4">URL de Destino Final</th>
+                        <th class="p-4">Estado</th>
+                        <th class="p-4 text-center">Acción</th>
+                    </tr>
+                </thead>
+                <tbody id="tabla-qrs">
+                    <!-- Contenido dinámico -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        async function cargarQRs() {
+            try {
+                const res = await fetch('/api/qrs');
+                const result = await res.json();
+                const tbody = document.getElementById('tabla-qrs');
+                tbody.innerHTML = '';
+
+                if (!result.data || result.data.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-500">No hay códigos cargados. Presiona "+ Nuevo QR".</td></tr>`;
+                    return;
+                }
+
+                result.data.forEach(qr => {
+                    const esAsignado = (qr.estado || '').toLowerCase() === 'asignado';
+                    const selectColorClass = esAsignado 
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-400 font-semibold' 
+                        : 'bg-gray-50 text-gray-700 border-gray-300';
+
+                    const row = document.createElement('tr');
+                    row.className = 'border-b hover:bg-gray-50 transition';
+                    row.innerHTML = `
+                        <td class="p-4">
+                            <span class="font-mono bg-gray-200 px-2 py-1 rounded text-sm text-gray-800 font-bold">${qr.codigo}</span>
+                            <br>
+                            <a href="/${qr.codigo}" target="_blank" class="text-xs text-indigo-600 hover:underline">Probar link ↗</a>
+                        </td>
+                        <td class="p-4">
+                            <input type="text" id="cliente-${qr.codigo}" value="${qr.cliente || ''}" placeholder="Ej. Juan Pérez" class="w-full border rounded p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                        </td>
+                        <td class="p-4">
+                            <input type="text" id="destino-${qr.codigo}" value="${qr.destino || ''}" placeholder="https://..." class="w-full border rounded p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                        </td>
+                        <td class="p-4">
+                            <select id="estado-${qr.codigo}" onchange="actualizarEstiloSelect('${qr.codigo}')" class="border rounded p-2 text-sm outline-none transition ${selectColorClass}">
+                                <option value="libre" ${!esAsignado ? 'selected' : ''}>Libre</option>
+                                <option value="Asignado" ${esAsignado ? 'selected' : ''}>Asignado</option>
+                            </select>
+                        </td>
+                        <td class="p-4 text-center">
+                            <button onclick="guardarQR('${qr.codigo}')" class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 transition">Guardar</button>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        function actualizarEstiloSelect(codigo) {
+            const select = document.getElementById(`estado-${codigo}`);
+            const esAsignado = select.value.toLowerCase() === 'asignado';
+            if (esAsignado) {
+                select.className = 'border rounded p-2 text-sm outline-none transition bg-emerald-50 text-emerald-700 border-emerald-400 font-semibold';
+            } else {
+                select.className = 'border rounded p-2 text-sm outline-none transition bg-gray-50 text-gray-700 border-gray-300';
+            }
+        }
+
+        async function guardarQR(codigo) {
+            const cliente = document.getElementById(`cliente-${codigo}`).value;
+            let destino = document.getElementById(`destino-${codigo}`).value.trim();
+            const estado = document.getElementById(`estado-${codigo}`).value;
+
+            try {
+                const res = await fetch(`/api/qrs/${codigo}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cliente, destino, estado })
+                });
+
+                if (res.ok) {
+                    alert('✅ Guardado con éxito');
+                    cargarQRs();
+                } else {
+                    alert('❌ Hubo un error al guardar.');
+                }
+            } catch (err) {
+                alert('❌ Error de conexión al guardar.');
+            }
+        }
+
+        async function crearNuevoQR() {
+            try {
+                const res = await fetch('/api/qrs/nuevo', { method: 'POST' });
+                if (res.ok) {
+                    cargarQRs();
+                } else {
+                    alert('❌ Hubo un error al crear el código.');
+                }
+            } catch (err) {
+                alert('❌ Error de conexión al crear.');
+            }
+        }
+
+        window.onload = cargarQRs;
+    </script>
+</body>
+</html>
