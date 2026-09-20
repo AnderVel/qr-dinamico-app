@@ -109,6 +109,22 @@ app.put('/api/qrs/:codigo', async (req, res) => {
     }
 });
 
+// Eliminar un QR por código especifico (DELETE)
+app.delete('/api/qrs/:codigo', async (req, res) => {
+    const { codigo } = req.params;
+    try {
+        const { data, error } = await supabase
+            .from('codigos_qr')
+            .delete()
+            .eq('codigo', codigo);
+
+        if (error) throw error;
+        res.json({ message: 'Código eliminado', data });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Crear nuevo QR con secuencia automática
 app.post('/api/qrs/nuevo', async (req, res) => {
     try {

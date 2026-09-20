@@ -3,38 +3,57 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Plancha - Códigos QR</title>
+    <title>Panel de QRs Dinámicos</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    </style>
 </head>
-<body class="bg-gray-100 p-8 font-sans">
-    <div class="max-w-6xl mx-auto">
-        <div class="flex justify-between items-center mb-8">
+<body class="bg-slate-900 text-slate-100 min-h-screen p-4 sm:p-8">
+    <div class="max-w-6xl mx-auto space-y-6">
+        
+        <!-- Encabezado responsivo -->
+        <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-slate-800/80 backdrop-blur border border-slate-700/60 p-6 rounded-2xl shadow-xl">
             <div>
-                <h1 class="text-3xl font-bold text-gray-800">Panel de QRs Dinámicos</h1>
-                <p class="text-gray-600">Administra tus enlaces en tiempo real</p>
+                <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">Panel de QRs Dinámicos</h1>
+                <p class="text-slate-400 text-sm mt-1">Gestiona y redirecciona tus enlaces en tiempo real</p>
             </div>
-            <div class="space-x-2">
-                <button onclick="crearNuevoQR()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-indigo-700 transition">+ Nuevo QR</button>
-                <span class="bg-emerald-500 text-white px-4 py-2 rounded-lg font-medium inline-block">Sistema Activo</span>
+            <div class="flex items-center gap-3">
+                <button onclick="crearNuevoQR()" class="flex-1 sm:flex-none bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-5 py-2.5 rounded-xl shadow-lg shadow-indigo-600/30 transition-all text-sm flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                    Nuevo QR
+                </button>
+                <span class="inline-flex items-center gap-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-3 py-2 rounded-xl text-xs font-semibold">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    Sistema Activo
+                </span>
             </div>
+        </header>
+
+        <!-- Vista Móvil: Tarjetas independientes -->
+        <div id="cards-mobile" class="space-y-4 md:hidden">
+            <!-- Contenido dinámico móvil -->
         </div>
 
-        <div class="bg-white rounded-xl shadow-md overflow-hidden">
+        <!-- Vista Escritorio: Tabla estilizada -->
+        <div class="hidden md:block bg-slate-800/80 backdrop-blur border border-slate-700/60 rounded-2xl shadow-2xl overflow-hidden">
             <table class="w-full text-left border-collapse">
                 <thead>
-                    <tr class="bg-slate-800 text-white">
+                    <tr class="bg-slate-900/80 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-700/60">
                         <th class="p-4">Código QR</th>
                         <th class="p-4">Nombre del Cliente</th>
                         <th class="p-4">URL de Destino Final</th>
                         <th class="p-4">Estado</th>
-                        <th class="p-4 text-center">Acción</th>
+                        <th class="p-4 text-center">Acciones</th>
                     </tr>
                 </thead>
-                <tbody id="tabla-qrs">
-                    <!-- Contenido dinámico -->
+                <tbody id="tabla-qrs" class="divide-y divide-slate-700/50 text-sm">
+                    <!-- Contenido dinámico escritorio -->
                 </tbody>
             </table>
         </div>
+
     </div>
 
     <script>
@@ -42,66 +61,118 @@
             try {
                 const res = await fetch('/api/qrs');
                 const result = await res.json();
+                
                 const tbody = document.getElementById('tabla-qrs');
+                const cardsContainer = document.getElementById('cards-mobile');
+                
                 tbody.innerHTML = '';
+                cardsContainer.innerHTML = '';
 
                 if (!result.data || result.data.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-500">No hay códigos cargados. Presiona "+ Nuevo QR".</td></tr>`;
+                    const noDataHTML = `<div class="p-8 text-center text-slate-400 text-sm">No hay códigos cargados. Presiona "Nuevo QR".</div>`;
+                    tbody.innerHTML = `<tr><td colspan="5">${noDataHTML}</td></tr>`;
+                    cardsContainer.innerHTML = noDataHTML;
                     return;
                 }
 
                 result.data.forEach(qr => {
                     const esAsignado = (qr.estado || '').toLowerCase() === 'asignado';
-                    const selectColorClass = esAsignado 
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-400 font-semibold' 
-                        : 'bg-gray-50 text-gray-700 border-gray-300';
 
+                    // Fila para escritorio
                     const row = document.createElement('tr');
-                    row.className = 'border-b hover:bg-gray-50 transition';
+                    row.className = 'hover:bg-slate-700/30 transition-colors';
                     row.innerHTML = `
                         <td class="p-4">
-                            <span class="font-mono bg-gray-200 px-2 py-1 rounded text-sm text-gray-800 font-bold">${qr.codigo}</span>
-                            <br>
-                            <a href="/${qr.codigo}" target="_blank" class="text-xs text-indigo-600 hover:underline">Probar link ↗</a>
+                            <span class="font-mono bg-slate-900 border border-slate-700 text-indigo-400 px-2.5 py-1 rounded-lg font-semibold text-xs">${qr.codigo}</span>
+                            <div class="mt-1.5">
+                                <a href="/${qr.codigo}" target="_blank" class="text-xs text-indigo-400 hover:text-indigo-300 hover:underline inline-flex items-center gap-1">Probar link ↗</a>
+                            </div>
                         </td>
                         <td class="p-4">
-                            <input type="text" id="cliente-${qr.codigo}" value="${qr.cliente || ''}" placeholder="Ej. Juan Pérez" class="w-full border rounded p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                            <input type="text" id="cliente-${qr.codigo}" value="${qr.cliente || ''}" placeholder="Ej. Juan Pérez" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-slate-200 placeholder-slate-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition">
                         </td>
                         <td class="p-4">
-                            <input type="text" id="destino-${qr.codigo}" value="${qr.destino || ''}" placeholder="https://..." class="w-full border rounded p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                            <input type="text" id="destino-${qr.codigo}" value="${qr.destino || ''}" placeholder="https://..." class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-slate-200 placeholder-slate-500 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition">
                         </td>
                         <td class="p-4">
-                            <select id="estado-${qr.codigo}" onchange="actualizarEstiloSelect('${qr.codigo}')" class="border rounded p-2 text-sm outline-none transition ${selectColorClass}">
-                                <option value="libre" ${!esAsignado ? 'selected' : ''}>Libre</option>
-                                <option value="Asignado" ${esAsignado ? 'selected' : ''}>Asignado</option>
+                            <select id="estado-${qr.codigo}" onchange="actualizarEstiloSelect('${qr.codigo}')" class="border rounded-xl p-2.5 text-sm outline-none transition font-medium ${getSelectClass(esAsignado)}">
+                                <option value="libre" ${!esAsignado ? 'selected' : ''} class="bg-slate-800 text-slate-200">Libre</option>
+                                <option value="Asignado" ${esAsignado ? 'selected' : ''} class="bg-slate-800 text-slate-200">Asignado</option>
                             </select>
                         </td>
                         <td class="p-4 text-center">
-                            <button onclick="guardarQR('${qr.codigo}')" class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 transition">Guardar</button>
+                            <div class="flex items-center justify-center gap-2">
+                                <button onclick="guardarQR('${qr.codigo}')" class="bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 px-3.5 py-2 rounded-xl text-xs font-semibold transition">Guardar</button>
+                                <button onclick="eliminarQR('${qr.codigo}')" class="bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 px-3 py-2 rounded-xl text-xs font-semibold transition">Eliminar</button>
+                            </div>
                         </td>
                     `;
                     tbody.appendChild(row);
+
+                    // Tarjeta para móvil
+                    const card = document.createElement('div');
+                    card.className = 'bg-slate-800/80 border border-slate-700/60 p-5 rounded-2xl space-y-4 shadow-lg';
+                    card.innerHTML = `
+                        <div class="flex justify-between items-center pb-3 border-b border-slate-700/50">
+                            <span class="font-mono bg-slate-900 border border-slate-700 text-indigo-400 px-3 py-1 rounded-lg font-bold text-sm">${qr.codigo}</span>
+                            <a href="/${qr.codigo}" target="_blank" class="text-xs font-medium text-indigo-400 hover:underline">Probar link ↗</a>
+                        </div>
+                        <div class="space-y-3">
+                            <div>
+                                <label class="text-xs text-slate-400 font-medium mb-1 block">Nombre del Cliente</label>
+                                <input type="text" id="m-cliente-${qr.codigo}" value="${qr.cliente || ''}" placeholder="Ej. Juan Pérez" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-slate-200 placeholder-slate-500 text-sm outline-none">
+                            </div>
+                            <div>
+                                <label class="text-xs text-slate-400 font-medium mb-1 block">URL de Destino Final</label>
+                                <input type="text" id="m-destino-${qr.codigo}" value="${qr.destino || ''}" placeholder="https://..." class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-slate-200 placeholder-slate-500 text-sm outline-none">
+                            </div>
+                            <div class="space-y-2 pt-2">
+                                <label class="text-xs text-slate-400 font-medium block">Estado</label>
+                                <select id="m-estado-${qr.codigo}" onchange="actualizarEstiloSelect('m-${qr.codigo}')" class="w-full border rounded-xl p-2.5 text-sm outline-none ${getSelectClass(esAsignado)}">
+                                    <option value="libre" ${!esAsignado ? 'selected' : ''} class="bg-slate-800 text-slate-200">Libre</option>
+                                    <option value="Asignado" ${esAsignado ? 'selected' : ''} class="bg-slate-800 text-slate-200">Asignado</option>
+                                </select>
+                            </div>
+                            <div class="flex items-center gap-2 pt-2">
+                                <button onclick="guardarQRMovil('${qr.codigo}')" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-xl text-xs shadow-md transition">Guardar</button>
+                                <button onclick="eliminarQR('${qr.codigo}')" class="bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 px-4 py-2.5 rounded-xl text-xs font-semibold transition">Eliminar</button>
+                            </div>
+                        </div>
+                    `;
+                    cardsContainer.appendChild(card);
                 });
             } catch (err) {
                 console.error(err);
             }
         }
 
-        function actualizarEstiloSelect(codigo) {
-            const select = document.getElementById(`estado-${codigo}`);
+        function getSelectClass(esAsignado) {
+            return esAsignado 
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 font-semibold' 
+                : 'bg-slate-900 text-slate-400 border-slate-700';
+        }
+
+        function actualizarEstiloSelect(idPrefix) {
+            const select = document.getElementById(`estado-${idPrefix}`) || document.getElementById(`${idPrefix}`);
             const esAsignado = select.value.toLowerCase() === 'asignado';
-            if (esAsignado) {
-                select.className = 'border rounded p-2 text-sm outline-none transition bg-emerald-50 text-emerald-700 border-emerald-400 font-semibold';
-            } else {
-                select.className = 'border rounded p-2 text-sm outline-none transition bg-gray-50 text-gray-700 border-gray-300';
-            }
+            select.className = `border rounded-xl p-2.5 text-sm outline-none transition ${getSelectClass(esAsignado)}`;
         }
 
         async function guardarQR(codigo) {
             const cliente = document.getElementById(`cliente-${codigo}`).value;
-            let destino = document.getElementById(`destino-${codigo}`).value.trim();
+            const destino = document.getElementById(`destino-${codigo}`).value.trim();
             const estado = document.getElementById(`estado-${codigo}`).value;
+            await enviarActualizacion(codigo, cliente, destino, estado);
+        }
 
+        async function guardarQRMovil(codigo) {
+            const cliente = document.getElementById(`m-cliente-${codigo}`).value;
+            const destino = document.getElementById(`m-destino-${codigo}`).value.trim();
+            const estado = document.getElementById(`m-estado-${codigo}`).value;
+            await enviarActualizacion(codigo, cliente, destino, estado);
+        }
+
+        async function enviarActualizacion(codigo, cliente, destino, estado) {
             try {
                 const res = await fetch(`/api/qrs/${codigo}`, {
                     method: 'PUT',
@@ -117,6 +188,22 @@
                 }
             } catch (err) {
                 alert('❌ Error de conexión al guardar.');
+            }
+        }
+
+        async function eliminarQR(codigo) {
+            if (!confirm(`¿Estás seguro de que deseas eliminar el código ${codigo}?`)) return;
+
+            try {
+                const res = await fetch(`/api/qrs/${codigo}`, { method: 'DELETE' });
+                if (res.ok) {
+                    alert('✅ Código eliminado con éxito');
+                    cargarQRs();
+                } else {
+                    alert('❌ Error al eliminar el código.');
+                }
+            } catch (err) {
+                alert('❌ Error de conexión al eliminar.');
             }
         }
 
