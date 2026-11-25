@@ -1,28 +1,32 @@
 const express = require('express');
 const path = require('path');
-const { createClient } = require('@supabase/supabase-js');
-const WebSocket = require('ws');
+const cors = require('cors');
+const sqlite3 = require('sqlite3').verbose();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configuración de Supabase
-const SUPABASE_URL = 'https://udbbggckhkuancxcyiow.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_-FAg794xWcsH8FfymgNDqg_AVIpS9CA';
-
-// Instancia de Supabase configurada con WebSockets para Node.js v20
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-    auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false
-    },
-    realtime: {
-        transport: WebSocket
+// Conexión a la base de datos SQLite local
+const dbPath = path.join(__dirname, 'qrs.db');
+const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+        console.error('Error al conectar con SQLite:', err.message);
+    } else {
+        console.log('📦 Conectado a la base de datos SQLite local (qrs.db)');
     }
 });
 
+// Crear tabla en SQLite si no existe
+db.run(`CREATE TABLE IF NOT EXISTS codigos_qr (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    codigo TEXT UNIQUE NOT NULL,
+    destino TEXT,
+    cliente TEXT,
+    estado TEXT DEFAULT 'libre'
+)`);
+
 // Middlewares
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -33,62 +37,86 @@ app.get('/panel', (req, res) => {
 });
 
 // Obtener todos los QRs
-app.get('/api/qrs', async (req, res) => {
-    try {
-        const { data, error } = await supabase
-            .from('codigos_qr')
-            .select('*')
-            .order('id', { ascending: true });
+app.get('/api/qrs', (req, res) => {
+    db.all('SELECT * FROM codigos_qr ORDER BY id ASC', [], (err, rows) => {
+        if (err) {
+            return res.status(500).json({ error: err.message });
+        }
+        res.json({ data: rows });
+    });
+});
 
-        if (error) throw error;
-        res.json({ data });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+// Crear nuevo QR con secuencia automática (POST /api/qrs/nuevo)
+app.post('/api/qrs/nuevo', (req, res) => {
+    db.get('SELECT COUNT(*) as total FROM codigos_qr', [], (err, row) => {
+        if (err) return res.status(500).json({ error: err.message });
+
+        const total = (row ? row.total : 0) + 1;
+        const nuevoCodigo = `re-${String(total).padStart(3, '0')}`;
+
+        db.run(
+            'INSERT INTO codigos_qr (codigo, estado) VALUES (?, ?)',
+            [nuevoCodigo, 'libre'],
+            function (err) {
+                if (err) return res.status(500).json({ error: err.message });
+                db.get('SELECT * FROM codigos_qr WHERE id = ?', [this.lastID], (err, newRow) => {
+                    if (err) return res.status(500).json({ error: err.message });
+                    res.json({ message: 'QR creado', data: [newRow] });
+                });
+            }
+        );
+    });
 });
 
 // Guardar, actualizar o crear un nuevo QR (POST)
-app.post('/api/qrs', async (req, res) => {
-    try {
-        if (!req.body || typeof req.body !== 'object' || !req.body.codigo) {
-            const { data, error } = await supabase
-                .from('codigos_qr')
-                .select('codigo');
+app.post('/api/qrs', (req, res) => {
+    if (!req.body || typeof req.body !== 'object' || !req.body.codigo) {
+        db.get('SELECT COUNT(*) as total FROM codigos_qr', [], (err, row) => {
+            if (err) return res.status(500).json({ error: err.message });
 
-            if (error) throw error;
-
-            const total = (data ? data.length : 0) + 1;
+            const total = (row ? row.total : 0) + 1;
             const nuevoCodigo = `re-${String(total).padStart(3, '0')}`;
 
-            const { data: insertData, error: insertError } = await supabase
-                .from('codigos_qr')
-                .insert([{ codigo: nuevoCodigo, estado: 'libre' }])
-                .select();
-
-            if (insertError) throw insertError;
-            return res.json({ message: 'QR creado', data: insertData });
-        }
-
-        let { codigo, cliente, destino, estado } = req.body;
-
-        if (destino && typeof destino === 'string') {
-            destino = destino.replace(/^\[\vert{}\]$/g, '').trim();
-        }
-
-        const { data, error } = await supabase
-            .from('codigos_qr')
-            .upsert({ codigo, cliente, destino, estado }, { onConflict: 'codigo' })
-            .select();
-
-        if (error) throw error;
-        res.json({ message: 'Guardado con éxito', data });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+            db.run(
+                'INSERT INTO codigos_qr (codigo, estado) VALUES (?, ?)',
+                [nuevoCodigo, 'libre'],
+                function (err) {
+                    if (err) return res.status(500).json({ error: err.message });
+                    db.get('SELECT * FROM codigos_qr WHERE id = ?', [this.lastID], (err, newRow) => {
+                        if (err) return res.status(500).json({ error: err.message });
+                        res.json({ message: 'QR creado', data: [newRow] });
+                    });
+                }
+            );
+        });
+        return;
     }
+
+    let { codigo, cliente, destino, estado } = req.body;
+    if (destino && typeof destino === 'string') {
+        destino = destino.replace(/^\[\vert{}\]$/g, '').trim();
+    }
+
+    db.run(
+        `INSERT INTO codigos_qr (codigo, cliente, destino, estado)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(codigo) DO UPDATE SET
+            cliente = excluded.cliente,
+            destino = excluded.destino,
+            estado = excluded.estado`,
+        [codigo, cliente || '', destino || '', estado || 'libre'],
+        function (err) {
+            if (err) return res.status(500).json({ error: err.message });
+            db.get('SELECT * FROM codigos_qr WHERE codigo = ?', [codigo], (err, row) => {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ message: 'Guardado con éxito', data: [row] });
+            });
+        }
+    );
 });
 
-// Actualizar un QR por código especifico (PUT)
-app.put('/api/qrs/:codigo', async (req, res) => {
+// Actualizar un QR por código específico (PUT /api/qrs/:codigo)
+app.put('/api/qrs/:codigo', (req, res) => {
     const { codigo } = req.params;
     let { cliente, destino, estado } = req.body;
 
@@ -96,76 +124,52 @@ app.put('/api/qrs/:codigo', async (req, res) => {
         destino = destino.replace(/^\[\vert{}\]$/g, '').trim();
     }
 
-    try {
-        const { data, error } = await supabase
-            .from('codigos_qr')
-            .upsert({ codigo, cliente, destino, estado }, { onConflict: 'codigo' })
-            .select();
-
-        if (error) throw error;
-        res.json({ message: 'Guardado con éxito', data });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    db.run(
+        `INSERT INTO codigos_qr (codigo, cliente, destino, estado)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(codigo) DO UPDATE SET
+            cliente = excluded.cliente,
+            destino = excluded.destino,
+            estado = excluded.estado`,
+        [codigo, cliente || '', destino || '', estado || 'libre'],
+        function (err) {
+            if (err) return res.status(500).json({ error: err.message });
+            db.get('SELECT * FROM codigos_qr WHERE codigo = ?', [codigo], (err, row) => {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ message: 'Guardado con éxito', data: [row] });
+            });
+        }
+    );
 });
 
-// Eliminar un QR por código especifico (DELETE)
-app.delete('/api/qrs/:codigo', async (req, res) => {
+// Eliminar un QR por código específico (DELETE /api/qrs/:codigo)
+app.delete('/api/qrs/:codigo', (req, res) => {
     const { codigo } = req.params;
-    try {
-        const { data, error } = await supabase
-            .from('codigos_qr')
-            .delete()
-            .eq('codigo', codigo);
-
-        if (error) throw error;
-        res.json({ message: 'Código eliminado', data });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Crear nuevo QR con secuencia automática
-app.post('/api/qrs/nuevo', async (req, res) => {
-    try {
-        const { data, error } = await supabase
-            .from('codigos_qr')
-            .select('codigo');
-
-        if (error) throw error;
-
-        const total = (data ? data.length : 0) + 1;
-        const nuevoCodigo = `re-${String(total).padStart(3, '0')}`;
-
-        const { data: insertData, error: insertError } = await supabase
-            .from('codigos_qr')
-            .insert([{ codigo: nuevoCodigo, estado: 'libre' }])
-            .select();
-
-        if (insertError) throw insertError;
-        res.json({ message: 'QR creado', data: insertData });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    db.run('DELETE FROM codigos_qr WHERE codigo = ?', [codigo], function (err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ message: 'Código eliminado', data: { codigo, changes: this.changes } });
+    });
 });
 
 // Motor de redirección dinámica
-app.get('/:codigo', async (req, res) => {
+app.get('/:codigo', (req, res) => {
     const { codigo } = req.params;
-    try {
-        const { data, error } = await supabase
-            .from('codigos_qr')
-            .select('*')
-            .eq('codigo', codigo)
-            .single();
 
-        if (error || !data) {
+    if (codigo === 'favicon.ico') {
+        return res.status(404).end();
+    }
+
+    db.get('SELECT * FROM codigos_qr WHERE codigo = ?', [codigo], (err, row) => {
+        if (err) {
+            return res.status(500).send('Error interno del servidor');
+        }
+        if (!row) {
             return res.status(404).send('Código QR no encontrado');
         }
 
-        const estadoNormalizado = data.estado ? data.estado.toLowerCase() : '';
-        if (estadoNormalizado === 'asignado' && data.destino) {
-            let urlDestino = data.destino.trim();
+        const estadoNormalizado = row.estado ? row.estado.toLowerCase() : '';
+        if (estadoNormalizado === 'asignado' && row.destino) {
+            let urlDestino = row.destino.trim();
             if (!urlDestino.startsWith('http://') && !urlDestino.startsWith('https://')) {
                 urlDestino = `https://${urlDestino}`;
             }
@@ -173,12 +177,10 @@ app.get('/:codigo', async (req, res) => {
         } else {
             return res.send(`<h1>El código ${codigo} no está asignado a ningún destino.</h1>`);
         }
-    } catch (err) {
-        res.status(500).send('Error interno del servidor');
-    }
+    });
 });
 
 app.listen(PORT, () => {
-    console.log(`✅ Servidor en la nube listo en puerto ${PORT}`);
+    console.log(`✅ Servidor listo en puerto ${PORT}`);
     console.log(`💻 Panel: http://localhost:${PORT}/panel`);
 });
