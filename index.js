@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 3000;
 const dbPath = path.join(__dirname, 'qrs.db');
 const db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
-        console.error('Error al conectar con SQLite:', err.message);
+        console.error('❌ Error al conectar con SQLite:', err.message);
     } else {
         console.log('📦 Conectado a la base de datos SQLite local (qrs.db)');
     }
@@ -31,6 +31,28 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Función auxiliar para obtener el siguiente código correlativo sin colisión de índice (re-001, re-002, etc.)
+function generarSiguienteCodigo(db, callback) {
+    db.all("SELECT codigo FROM codigos_qr WHERE codigo LIKE 're-%'", [], (err, rows) => {
+        if (err) return callback(err, null);
+
+        let maxNum = 0;
+        if (rows && rows.length > 0) {
+            rows.forEach(row => {
+                const match = row.codigo.match(/^re-(\d+)$/i);
+                if (match) {
+                    const num = parseInt(match[1], 10);
+                    if (!isNaN(num) && num > maxNum) {
+                        maxNum = num;
+                    }
+                }
+            });
+        }
+        const nuevoCodigo = `re-${String(maxNum + 1).padStart(3, '0')}`;
+        callback(null, nuevoCodigo);
+    });
+}
+
 // Servir el panel de control
 app.get('/panel', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -48,11 +70,8 @@ app.get('/api/qrs', (req, res) => {
 
 // Crear nuevo QR con secuencia automática (POST /api/qrs/nuevo)
 app.post('/api/qrs/nuevo', (req, res) => {
-    db.get('SELECT COUNT(*) as total FROM codigos_qr', [], (err, row) => {
+    generarSiguienteCodigo(db, (err, nuevoCodigo) => {
         if (err) return res.status(500).json({ error: err.message });
-
-        const total = (row ? row.total : 0) + 1;
-        const nuevoCodigo = `re-${String(total).padStart(3, '0')}`;
 
         db.run(
             'INSERT INTO codigos_qr (codigo, estado) VALUES (?, ?)',
@@ -71,11 +90,8 @@ app.post('/api/qrs/nuevo', (req, res) => {
 // Guardar, actualizar o crear un nuevo QR (POST)
 app.post('/api/qrs', (req, res) => {
     if (!req.body || typeof req.body !== 'object' || !req.body.codigo) {
-        db.get('SELECT COUNT(*) as total FROM codigos_qr', [], (err, row) => {
+        generarSiguienteCodigo(db, (err, nuevoCodigo) => {
             if (err) return res.status(500).json({ error: err.message });
-
-            const total = (row ? row.total : 0) + 1;
-            const nuevoCodigo = `re-${String(total).padStart(3, '0')}`;
 
             db.run(
                 'INSERT INTO codigos_qr (codigo, estado) VALUES (?, ?)',
